@@ -1,41 +1,25 @@
-const WebSocket = require('ws');
-const port = process.env.PORT || 3000;
-const wss = new WebSocket.Server({ port });
+// Adicione isso no topo do script
+let goalReached = false;
 
-let rooms = {};
+// Dentro do init3D, adicione o bloco de chegada
+const goalGeo = new THREE.BoxGeometry(2, 0.5, 2);
+const goalMat = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00 });
+const goal = new THREE.Mesh(goalGeo, goalMat);
+// Coloca a chegada no final do labirinto (canto oposto)
+goal.position.set((mazeSize - 2) * 2 - mazeSize, 0.1, (mazeSize - 2) * 2 - mazeSize);
+scene.add(goal);
 
-wss.on('connection', (ws) => {
-    ws.on('message', (message) => {
-        const d = JSON.parse(message);
+// Dentro do animate, verifique a vitória
+function animate() {
+    requestAnimationFrame(animate);
+    if (!side || goalReached) return;
 
-        if (d.type === 'join') {
-            const token = d.token;
-            if (!rooms[token]) rooms[token] = { players: [], sides: ['A', 'B'] };
+    // ... (seu código de movimento atual)
 
-            if (rooms[token].players.length < 2) {
-                const side = rooms[token].sides.shift();
-                ws.side = side;
-                ws.token = token;
-                rooms[token].players.push(ws);
-                ws.send(JSON.stringify({ type: 'start', side }));
-                console.log(`${d.nick} entrou como ${side} na sala ${token}`);
-            }
-        }
-
-        if (d.type === 'move' && ws.token) {
-            rooms[ws.token].players.forEach(p => {
-                if (p !== ws) p.send(JSON.stringify(d));
-            });
-        }
-    });
-
-    ws.on('close', () => {
-        if (ws.token && rooms[ws.token]) {
-            rooms[ws.token].players = rooms[ws.token].players.filter(p => p !== ws);
-            rooms[ws.token].sides.push(ws.side);
-            if (rooms[ws.token].players.length === 0) delete rooms[ws.token];
-        }
-    });
-});
-
-console.log(`Servidor iniciado na porta ${port}`);
+    // Lógica de Vitória
+    if (p.position.distanceTo(goal.position) < 1.5) {
+        goalReached = true;
+        alert("PARABÉNS! Você completou o labirinto!");
+        location.reload(); // Reinicia o jogo
+    }
+}
