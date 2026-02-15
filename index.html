@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Labirinto 3D Duo</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        #ui { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; z-index: 10; text-align: center; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; }
+        #mapa { position: absolute; bottom: 20px; right: 20px; width: 150px; height: 150px; background: rgba(255,255,255,0.1); border: 2px solid white; z-index: 10; }
+        .p-mapa { position: absolute; width: 6px; height: 6px; border-radius: 50%; transform: translate(-50%, -50%); }
+        input, button { padding: 10px; margin: 5px; font-size: 16px; border: none; border-radius: 5px; }
+        button { background: #4444ff; color: white; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h2>LABIRINTO DUO</h2>
+    <input type="text" id="token" placeholder="Código da Sala" value="123">
+    <br>
+    <button onclick="conectar()">ENTRAR NO JOGO</button>
+</div>
+<div id="mapa"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+let socket, scene, camera, renderer, side, playerA, playerB;
+let wallMeshes = [];
+let move = { fwd: false, bck: false, lft: false, rgt: false };
+
+const maze = [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
+    [1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1],
+    [1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1],
+    [1,0,1,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1,0,1],
+    [1,0,0,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1,0,1],
+    [1,1,1,0,1,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1],
+    [1,0,0,0,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,0,0,0,1,0,1],
+    [1,0,1,1,1,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,1,1,1,0,1],
+    [1,0,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,0,0,0,0,0,1,0,1],
+    [1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,1,1,1,0,1,0,1],
+    [1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0,1,0,1,0,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,1,0,0,0,1],
+    [1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,0,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,1,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,1],
+    [1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,0,1],
+    [1,0,1,0,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1],
+    [1,0,0,0,1,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1],
+    [1,1,1,1,1,0,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,0,1],
+    [1,0,0,0,0,0,1,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,1],
+    [1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1],
+    [1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1],
+    [1,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1],
+    [1,0,1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1],
+    [1,0,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,1],
+    [1,1,1,1,1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,0,1],
+    [1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,1],
+    [1,0,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1],
+    [1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,1],
+    [1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1],
+    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1,2,0,0,1,0,1],
+    [1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+function init3D() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050510);
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambient);
+
+    const wallGeo = new THREE.BoxGeometry(2, 2, 2);
+    const wallMat = new THREE.MeshPhongMaterial({color: 0x4444ff});
+    
+    maze.forEach((row, z) => {
+        row.forEach((val, x) => {
+            let pos = {x: x*2 - 40, z: z*2 - 40};
+            if(val === 1) {
+                const wall = new THREE.Mesh(wallGeo, wallMat);
+                wall.position.set(pos.x, 1, pos.z);
+                scene.add(wall);
+                wallMeshes.push(wall);
+            } else if(val === 2) {
+                const goal = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({color: 0x00ff00}));
+                goal.position.set(pos.x, 0.5, pos.z);
+                scene.add(goal);
+            }
+        });
+    });
+
+    playerA = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({color: 0xff0000}));
+    playerB = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({color: 0x00ffff}));
+    playerA.position.set(-38, 0.5, -38);
+    playerB.position.set(-38, 0.5, -38);
+    scene.add(playerA, playerB);
+
+    animate();
+}
+
+function conectar() {
+    const token = document.getElementById('token').value;
+    // IMPORTANTE: Substitua o link abaixo após criar seu servidor no Render/Railway
+    const serverURL = 'wss://SEU-BACKEND-AQUI.onrender.com'; 
+    socket = new WebSocket(serverURL);
+
+    socket.onopen = () => {
+        socket.send(JSON.stringify({type: 'join', token}));
+        document.getElementById('ui').style.display = 'none';
+        init3D();
+    };
+
+    socket.onmessage = (m) => {
+        const d = JSON.parse(m.data);
+        if(d.type === 'start') side = d.side;
+        if(d.type === 'move') {
+            const target = d.side === 'A' ? playerA : playerB;
+            target.position.set(d.x, 0.5, d.z);
+        }
+    };
+}
+
+window.onkeydown = (e) => { 
+    const k = keyMap(e.key);
+    if(move.hasOwnProperty(k)) move[k] = true; 
+};
+window.onkeyup = (e) => { 
+    const k = keyMap(e.key);
+    if(move.hasOwnProperty(k)) move[k] = false; 
+};
+
+function keyMap(k) {
+    if(k.toLowerCase() === 'w') return 'fwd'; 
+    if(k.toLowerCase() === 's') return 'bck';
+    if(k.toLowerCase() === 'a') return 'lft'; 
+    if(k.toLowerCase() === 'd') return 'rgt';
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    if(!side) return;
+
+    const p = side === 'A' ? playerA : playerB;
+    const oldPos = p.position.clone();
+    const speed = 0.15;
+
+    if(move.fwd) p.position.z -= speed;
+    if(move.bck) p.position.z += speed;
+    if(move.lft) p.position.x -= speed;
+    if(move.rgt) p.position.x += speed;
+
+    // Colisão (Melhorada)
+    for(let w of wallMeshes) {
+        if(p.position.distanceTo(w.position) < 1.2) {
+            p.position.copy(oldPos);
+            break;
+        }
+    }
+
+    // Câmera
+    camera.position.lerp(new THREE.Vector3(p.position.x, 12, p.position.z + 8), 0.1);
+    camera.lookAt(p.position);
+
+    // Envia rede
+    if(socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({type: 'move', side, x: p.position.x, z: p.position.z}));
+    }
+
+    // Mini-mapa (Ajustado para o tamanho do labirinto)
+    document.getElementById('mapa').innerHTML = `
+        <div class="p-mapa" style="background:red; left:${50 + playerA.position.x*1.2}%; top:${50 + playerA.position.z*1.2}%"></div>
+        <div class="p-mapa" style="background:cyan; left:${50 + playerB.position.x*1.2}%; top:${50 + playerB.position.z*1.2}%"></div>
+    `;
+
+    renderer.render(scene, camera);
+}
+</script>
+</body>
+</html>
