@@ -1,25 +1,22 @@
-// Adicione isso no topo do script
-let goalReached = false;
+const WebSocket = require('ws');
 
-// Dentro do init3D, adicione o bloco de chegada
-const goalGeo = new THREE.BoxGeometry(2, 0.5, 2);
-const goalMat = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00 });
-const goal = new THREE.Mesh(goalGeo, goalMat);
-// Coloca a chegada no final do labirinto (canto oposto)
-goal.position.set((mazeSize - 2) * 2 - mazeSize, 0.1, (mazeSize - 2) * 2 - mazeSize);
-scene.add(goal);
+// O Render define a porta automaticamente, por isso usamos process.env.PORT
+const port = process.env.PORT || 8080;
+const wss = new WebSocket.Server({ port });
 
-// Dentro do animate, verifique a vitória
-function animate() {
-    requestAnimationFrame(animate);
-    if (!side || goalReached) return;
+console.log(`Servidor iniciado na porta ${port}`);
 
-    // ... (seu código de movimento atual)
+wss.on('connection', (ws) => {
+    console.log('Novo jogador conectado');
 
-    // Lógica de Vitória
-    if (p.position.distanceTo(goal.position) < 1.5) {
-        goalReached = true;
-        alert("PARABÉNS! Você completou o labirinto!");
-        location.reload(); // Reinicia o jogo
-    }
-}
+    ws.on('message', (message) => {
+        // Envia a posição de um jogador para todos os outros
+        wss.clients.forEach((client) => {
+            if (client !== ws && client.readyState === WebSocket.OPEN) {
+                client.send(message.toString());
+            }
+        });
+    });
+
+    ws.on('close', () => console.log('Jogador desconectou'));
+});
