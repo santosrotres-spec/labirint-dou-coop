@@ -6,32 +6,26 @@ let rooms = {};
 
 wss.on('connection', (ws) => {
     ws.on('message', (message) => {
-        try {
-            const d = JSON.parse(message);
-            
-            if (d.type === 'join') {
-                const token = d.token;
-                if (!rooms[token]) {
-                    rooms[token] = { players: [], sides: ['A', 'B'] };
-                }
-                
-                if (rooms[token].players.length < 2) {
-                    const side = rooms[token].sides.shift();
-                    ws.side = side;
-                    ws.token = token;
-                    rooms[token].players.push(ws);
-                    ws.send(JSON.stringify({ type: 'start', side }));
-                    console.log(`Player ${side} entrou na sala ${token}`);
-                }
-            }
+        const d = JSON.parse(message);
 
-            if (d.type === 'move' && ws.token) {
-                rooms[ws.token].players.forEach(p => {
-                    if (p !== ws) p.send(JSON.stringify(d));
-                });
+        if (d.type === 'join') {
+            const token = d.token;
+            if (!rooms[token]) rooms[token] = { players: [], sides: ['A', 'B'] };
+
+            if (rooms[token].players.length < 2) {
+                const side = rooms[token].sides.shift();
+                ws.side = side;
+                ws.token = token;
+                rooms[token].players.push(ws);
+                ws.send(JSON.stringify({ type: 'start', side }));
+                console.log(`${d.nick} entrou como ${side} na sala ${token}`);
             }
-        } catch (e) {
-            console.error("Erro no processamento:", e);
+        }
+
+        if (d.type === 'move' && ws.token) {
+            rooms[ws.token].players.forEach(p => {
+                if (p !== ws) p.send(JSON.stringify(d));
+            });
         }
     });
 
@@ -44,4 +38,4 @@ wss.on('connection', (ws) => {
     });
 });
 
-console.log(`Servidor de Labirinto rodando na porta ${port}`);
+console.log(`Servidor iniciado na porta ${port}`);

@@ -1,188 +1,179 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Labirinto 3D Duo</title>
+    <title>Labirinto Duo 3D</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        #ui { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; z-index: 10; text-align: center; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 10px; }
-        #mapa { position: absolute; bottom: 20px; right: 20px; width: 150px; height: 150px; background: rgba(255,255,255,0.1); border: 2px solid white; z-index: 10; }
+        
+        /* TELA INICIAL */
+        #ui-overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: #0a0a1a; display: flex; align-items: center; justify-content: center; z-index: 1000; 
+        }
+        .login-box { background: #161625; padding: 40px; border-radius: 10px; text-align: center; border: 1px solid #4444ff; color: white; }
+        input { display: block; width: 250px; padding: 12px; margin: 10px auto; border-radius: 5px; border: none; }
+        button { width: 275px; padding: 12px; background: #4444ff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        
+        /* HUD */
+        #mapa { position: absolute; bottom: 20px; right: 20px; width: 150px; height: 150px; background: rgba(0,0,0,0.7); border: 2px solid #4444ff; z-index: 10; display: none; }
         .p-mapa { position: absolute; width: 6px; height: 6px; border-radius: 50%; transform: translate(-50%, -50%); }
-        input, button { padding: 10px; margin: 5px; font-size: 16px; border: none; border-radius: 5px; }
-        button { background: #4444ff; color: white; cursor: pointer; }
+        #info { position: absolute; top: 20px; left: 20px; color: white; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; display: none; }
     </style>
 </head>
 <body>
 
-<div id="ui">
-    <h2>LABIRINTO DUO</h2>
-    <input type="text" id="token" placeholder="Código da Sala" value="123">
-    <br>
-    <button onclick="conectar()">ENTRAR NO JOGO</button>
+<div id="ui-overlay">
+    <div class="login-box">
+        <h1>MAZE DUO</h1>
+        <input type="text" id="nick" placeholder="Teu Nickname">
+        <input type="text" id="sala" placeholder="Código da Sala" value="123">
+        <button onclick="iniciar()">JOGAR AGORA</button>
+    </div>
 </div>
+
+<div id="info">Conectando...</div>
 <div id="mapa"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
-let socket, scene, camera, renderer, side, playerA, playerB;
+let scene, camera, renderer, socket, side, myNick;
+let playerA, playerB, maze = [];
 let wallMeshes = [];
 let move = { fwd: false, bck: false, lft: false, rgt: false };
+const mazeSize = 41; // 10x maior que o original
 
-const maze = [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1],
-    [1,0,1,1,0,1,0,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,0,1],
-    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1],
-    [1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1],
-    [1,0,1,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,1,0,1],
-    [1,0,0,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,1,0,1,0,1,0,1],
-    [1,1,1,0,1,0,1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1],
-    [1,0,0,0,0,0,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,0,0,0,1,0,1],
-    [1,0,1,1,1,1,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,1,1,1,1,0,1],
-    [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,0,0,0,0,0,0,0,1],
-    [1,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,1,1,1,1,1,1,1,0,1],
-    [1,0,1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,0,0,0,0,0,1,0,1],
-    [1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,1,1,1,0,1,0,1],
-    [1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1,1,0,1,0,1,0,1,0,1],
-    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,0,1,0,1,0,0,0,1],
-    [1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,1,1,1,1,1,1,1,0,1,1,0,1,1,1,1,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,0,1,0,1,1,1,1,0,1,1,1,1,1,1,1,1,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,1,0,1,0,0,1,0,0,0,0,0,0,0,0,1,0,1],
-    [1,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,0,1],
-    [1,0,1,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,0,1],
-    [1,0,1,0,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1],
-    [1,0,0,0,1,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,1,0,1],
-    [1,1,1,1,1,0,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,0,1,0,1],
-    [1,0,0,0,0,0,1,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,1,0,1],
-    [1,0,1,1,1,1,1,0,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1],
-    [1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1],
-    [1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1],
-    [1,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1],
-    [1,0,1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1],
-    [1,0,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,1],
-    [1,1,1,1,1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,0,1],
-    [1,0,0,0,0,0,1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,1],
-    [1,0,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1],
-    [1,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,1],
-    [1,0,1,0,1,1,1,1,1,1,1,1,1,1,1,1,1,0,1,1,0,1,0,1,1,1,1,1,1,1,0,1,0,1,1,1,1,1,0,1],
-    [1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,1,0,0,0,1,2,0,0,1,0,1],
-    [1,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-];
+// GERADOR DE LABIRINTO (Igual para os dois via Seed)
+function generateMaze(seed) {
+    let m = Array(mazeSize).fill().map(() => Array(mazeSize).fill(1));
+    function random(s) {
+        let x = Math.sin(s) * 10000;
+        return x - Math.floor(x);
+    }
+    function walk(x, y, s) {
+        m[y][x] = 0;
+        let dirs = [[0,2],[0,-2],[2,0],[-2,0]].sort(() => random(s++) - 0.5);
+        dirs.forEach(([dx, dy]) => {
+            let nx = x + dx, ny = y + dy;
+            if (nx > 0 && nx < mazeSize && ny > 0 && ny < mazeSize && m[ny][nx] === 1) {
+                m[y + dy/2][x + dx/2] = 0;
+                walk(nx, ny, s + 1);
+            }
+        });
+    }
+    walk(1, 1, seed);
+    m[mazeSize-2][mazeSize-2] = 2; // Saída
+    return m;
+}
 
 function init3D() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x050510);
+    scene.fog = new THREE.Fog(0x050510, 2, 20); // Nevoeiro para clima
+
     camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    renderer = new THREE.WebGLRenderer({antialias: true});
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
-    scene.add(ambient);
+    const light = new THREE.PointLight(0xffffff, 1, 50);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5), light);
 
     const wallGeo = new THREE.BoxGeometry(2, 2, 2);
-    const wallMat = new THREE.MeshPhongMaterial({color: 0x4444ff});
-    
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x333366 });
+
     maze.forEach((row, z) => {
         row.forEach((val, x) => {
-            let pos = {x: x*2 - 40, z: z*2 - 40};
-            if(val === 1) {
+            let pos = { x: x * 2 - mazeSize, z: z * 2 - mazeSize };
+            if (val === 1) {
                 const wall = new THREE.Mesh(wallGeo, wallMat);
                 wall.position.set(pos.x, 1, pos.z);
                 scene.add(wall);
                 wallMeshes.push(wall);
-            } else if(val === 2) {
-                const goal = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({color: 0x00ff00}));
+            } else if (val === 2) {
+                const goal = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
                 goal.position.set(pos.x, 0.5, pos.z);
                 scene.add(goal);
             }
         });
     });
 
-    playerA = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({color: 0xff0000}));
-    playerB = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({color: 0x00ffff}));
-    playerA.position.set(-38, 0.5, -38);
-    playerB.position.set(-38, 0.5, -38);
+    playerA = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+    playerB = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
+    playerA.position.set(-mazeSize + 2, 0.5, -mazeSize + 2);
+    playerB.position.set(-mazeSize + 2, 0.5, -mazeSize + 2);
     scene.add(playerA, playerB);
 
     animate();
 }
 
-function conectar() {
-    const token = document.getElementById('token').value;
-    // IMPORTANTE: Substitua o link abaixo após criar seu servidor no Render/Railway
-    const serverURL = 'wss://SEU-BACKEND-AQUI.onrender.com'; 
-    socket = new WebSocket(serverURL);
+function iniciar() {
+    myNick = document.getElementById('nick').value || "Explorador";
+    const sala = document.getElementById('sala').value;
+    
+    maze = generateMaze(parseInt(sala) || 123);
+
+    // TROQUE ESTA URL PELO TEU LINK DO RENDER
+    socket = new WebSocket('wss://TEU-LINK-AQUI.onrender.com');
 
     socket.onopen = () => {
-        socket.send(JSON.stringify({type: 'join', token}));
-        document.getElementById('ui').style.display = 'none';
+        socket.send(JSON.stringify({ type: 'join', token: sala, nick: myNick }));
+        document.getElementById('ui-overlay').style.display = 'none';
+        document.getElementById('mapa').style.display = 'block';
+        document.getElementById('info').style.display = 'block';
         init3D();
     };
 
-    socket.onmessage = (m) => {
-        const d = JSON.parse(m.data);
-        if(d.type === 'start') side = d.side;
-        if(d.type === 'move') {
-            const target = d.side === 'A' ? playerA : playerB;
-            target.position.set(d.x, 0.5, d.z);
+    socket.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+        if (data.type === 'start') {
+            side = data.side;
+            document.getElementById('info').innerHTML = `Nick: ${myNick} | Time: ${side}`;
+        }
+        if (data.type === 'move') {
+            const target = data.side === 'A' ? playerA : playerB;
+            target.position.set(data.x, 0.5, data.z);
         }
     };
 }
 
-window.onkeydown = (e) => { 
-    const k = keyMap(e.key);
-    if(move.hasOwnProperty(k)) move[k] = true; 
-};
-window.onkeyup = (e) => { 
-    const k = keyMap(e.key);
-    if(move.hasOwnProperty(k)) move[k] = false; 
-};
-
-function keyMap(k) {
-    if(k.toLowerCase() === 'w') return 'fwd'; 
-    if(k.toLowerCase() === 's') return 'bck';
-    if(k.toLowerCase() === 'a') return 'lft'; 
-    if(k.toLowerCase() === 'd') return 'rgt';
+window.onkeydown = (e) => handleKey(e.key, true);
+window.onkeyup = (e) => handleKey(e.key, false);
+function handleKey(k, state) {
+    if(k==='w'||k==='W') move.fwd = state;
+    if(k==='s'||k==='S') move.bck = state;
+    if(k==='a'||k==='A') move.lft = state;
+    if(k==='d'||k==='D') move.rgt = state;
 }
 
 function animate() {
     requestAnimationFrame(animate);
-    if(!side) return;
+    if (!side) return;
 
     const p = side === 'A' ? playerA : playerB;
-    const oldPos = p.position.clone();
-    const speed = 0.15;
+    const old = p.position.clone();
+    
+    if (move.fwd) p.position.z -= 0.15;
+    if (move.bck) p.position.z += 0.15;
+    if (move.lft) p.position.x -= 0.15;
+    if (move.rgt) p.position.x += 0.15;
 
-    if(move.fwd) p.position.z -= speed;
-    if(move.bck) p.position.z += speed;
-    if(move.lft) p.position.x -= speed;
-    if(move.rgt) p.position.x += speed;
-
-    // Colisão (Melhorada)
-    for(let w of wallMeshes) {
-        if(p.position.distanceTo(w.position) < 1.2) {
-            p.position.copy(oldPos);
-            break;
-        }
+    for (let w of wallMeshes) {
+        if (p.position.distanceTo(w.position) < 1.2) { p.position.copy(old); break; }
     }
 
-    // Câmera
     camera.position.lerp(new THREE.Vector3(p.position.x, 12, p.position.z + 8), 0.1);
     camera.lookAt(p.position);
 
-    // Envia rede
-    if(socket && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({type: 'move', side, x: p.position.x, z: p.position.z}));
+    if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'move', side, x: p.position.x, z: p.position.z }));
     }
 
-    // Mini-mapa (Ajustado para o tamanho do labirinto)
+    const scale = 100 / (mazeSize * 2);
     document.getElementById('mapa').innerHTML = `
-        <div class="p-mapa" style="background:red; left:${50 + playerA.position.x*1.2}%; top:${50 + playerA.position.z*1.2}%"></div>
-        <div class="p-mapa" style="background:cyan; left:${50 + playerB.position.x*1.2}%; top:${50 + playerB.position.z*1.2}%"></div>
+        <div class="p-mapa" style="background:red; left:${50 + playerA.position.x*scale}%; top:${50 + playerA.position.z*scale}%"></div>
+        <div class="p-mapa" style="background:cyan; left:${50 + playerB.position.x*scale}%; top:${50 + playerB.position.z*scale}%"></div>
     `;
 
     renderer.render(scene, camera);
