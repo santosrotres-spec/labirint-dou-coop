@@ -2,18 +2,25 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Maze Duo Custom</title>
+    <title>Maze Duo - Color & Names</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; color: white; }
         #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a1a; display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .custom-box { background: #161625; padding: 30px; border-radius: 15px; border: 2px solid #4444ff; display: flex; gap: 30px; align-items: center; }
         #char-preview { width: 200px; height: 250px; background: #000; border-radius: 10px; border: 1px solid #444; }
         .controls { display: flex; flex-direction: column; gap: 10px; text-align: center; }
-        canvas#rosto-canvas { background: white; border: 2px solid #4444ff; cursor: crosshair; image-rendering: pixelated; }
-        input { padding: 10px; border-radius: 5px; border: none; width: 200px; align-self: center; }
-        button { padding: 10px; background: #4444ff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        input { padding: 10px; border-radius: 5px; border: none; width: 220px; align-self: center; }
+        input[type="color"] { width: 100px; height: 45px; cursor: pointer; background: none; }
+        button { padding: 12px; background: #4444ff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
         button.play { background: #22c55e; font-size: 18px; margin-top: 10px; }
-        #info { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 5px; display: none; }
+        
+        /* Tag de Nome Flutuante */
+        .label {
+            position: absolute; color: white; background: rgba(0,0,0,0.7);
+            padding: 4px 10px; border-radius: 4px; font-size: 14px;
+            pointer-events: none; transform: translate(-50%, -100%);
+            white-space: nowrap; font-weight: bold; border: 1px solid #444;
+        }
     </style>
 </head>
 <body>
@@ -25,90 +32,40 @@
             <h1>MAZE DUO</h1>
             <input type="text" id="nick" placeholder="Seu Nickname">
             <input type="text" id="sala" placeholder="Código da Sala" value="123">
-            
-            <span>Desenhe seu Rosto (Lápis):</span>
-            <canvas id="rosto-canvas" width="64" height="64"></canvas>
-            
-            <button onclick="toggleHat()">Alternar Chapéu</button>
+            <span>Cor do Personagem:</span>
+            <input type="color" id="cor-player" value="#ff0000" oninput="updateColor(this.value)">
             <button class="play" onclick="iniciar()">JOGAR AGORA</button>
         </div>
     </div>
 </div>
 
-<div id="info">Conectando...</div>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
-let scene, camera, renderer, socket, side, myNick;
+let scene, camera, renderer, socket, side, myNick, playerColor = "#ff0000";
 let playerA, playerB, maze = [], wallMeshes = [];
+let labelA, labelB; 
 let move = { fwd: false, bck: false, lft: false, rgt: false };
 const mazeSize = 31;
 
-// --- SISTEMA DE CUSTOMIZAÇÃO ---
-let previewScene, previewCam, previewRenderer, previewModel, previewHat;
-let hasHat = false;
-const canvas = document.getElementById('rosto-canvas');
-const ctx = canvas.getContext('2d');
-let painting = false;
-
-// Desenho no Canvas
-canvas.onmousedown = () => painting = true;
-window.onmouseup = () => { painting = false; updateTextures(); };
-canvas.onmousemove = (e) => {
-    if (!painting) return;
-    const rect = canvas.getBoundingClientRect();
-    ctx.fillStyle = "black";
-    ctx.fillRect(e.clientX - rect.left - 2, e.clientY - rect.top - 2, 4, 4);
-};
-
-function updateTextures() {
-    const tex = new THREE.CanvasTexture(canvas);
-    previewModel.material.map = tex;
-    previewModel.material.needsUpdate = true;
-}
-
-function toggleHat() {
-    hasHat = !hasHat;
-    previewHat.visible = hasHat;
-}
-
+// PREVIEW DO MENU
+let previewScene, previewCam, previewRenderer, previewModel;
 function initPreview() {
     previewScene = new THREE.Scene();
     previewCam = new THREE.PerspectiveCamera(75, 200/250, 0.1, 10);
-    previewCam.position.set(0, 0.5, 2);
-    
+    previewCam.position.z = 2;
     previewRenderer = new THREE.WebGLRenderer({ antialias: true });
     previewRenderer.setSize(200, 250);
     document.getElementById('char-preview').appendChild(previewRenderer.domElement);
-
-    const group = new THREE.Group();
-    // Cabeça
-    previewModel = new THREE.Mesh(
-        new THREE.SphereGeometry(0.8, 32, 32),
-        new THREE.MeshStandardMaterial({ color: 0xffffff })
-    );
-    // Chapéu
-    previewHat = new THREE.Mesh(
-        new THREE.ConeGeometry(0.6, 1, 32),
-        new THREE.MeshStandardMaterial({ color: 0xffd700 })
-    );
-    previewHat.position.y = 0.8;
-    previewHat.visible = false;
-
-    group.add(previewModel, previewHat);
-    previewScene.add(group, new THREE.AmbientLight(0xffffff, 1));
-    
-    function anim() { 
-        requestAnimationFrame(anim); 
-        group.rotation.y += 0.01; 
-        previewRenderer.render(previewScene, previewCam); 
-    }
+    previewModel = new THREE.Mesh(new THREE.SphereGeometry(0.8, 32, 32), new THREE.MeshStandardMaterial({ color: playerColor }));
+    previewScene.add(previewModel, new THREE.AmbientLight(0xffffff, 1));
+    function anim() { requestAnimationFrame(anim); previewModel.rotation.y += 0.01; previewRenderer.render(previewScene, previewCam); }
     anim();
 }
+function updateColor(val) { playerColor = val; previewModel.material.color.set(val); }
 initPreview();
 
-// --- LÓGICA DO JOGO ---
+// JOGO
 function generateMaze(seed) {
     let m = Array(mazeSize).fill().map(() => Array(mazeSize).fill(1));
     function random(s) { let x = Math.sin(s) * 10000; return x - Math.floor(x); }
@@ -118,13 +75,11 @@ function generateMaze(seed) {
         dirs.forEach(([dx, dy]) => {
             let nx = x + dx, ny = y + dy;
             if (nx > 0 && nx < mazeSize && ny > 0 && ny < mazeSize && m[ny][nx] === 1) {
-                m[y + dy/2][x + dx/2] = 0;
-                walk(nx, ny, s + 1);
+                m[y + dy/2][x + dx/2] = 0; walk(nx, ny, s + 1);
             }
         });
     }
-    walk(1, 1, seed);
-    return m;
+    walk(1, 1, seed); return m;
 }
 
 function iniciar() {
@@ -132,17 +87,13 @@ function iniciar() {
     const sala = document.getElementById('sala').value || "123";
     maze = generateMaze(parseInt(sala));
 
+    labelA = document.createElement('div'); labelA.className = 'label'; document.body.appendChild(labelA);
+    labelB = document.createElement('div'); labelB.className = 'label'; document.body.appendChild(labelB);
+
     socket = new WebSocket('wss://labirint-dou-coop.onrender.com');
 
     socket.onopen = () => {
-        const faceData = canvas.toDataURL(); // Converte desenho em imagem
-        socket.send(JSON.stringify({ 
-            type: 'join', 
-            token: sala, 
-            nick: myNick, 
-            face: faceData, 
-            hat: hasHat 
-        }));
+        socket.send(JSON.stringify({ type: 'join', token: sala, nick: myNick, color: playerColor }));
     };
 
     socket.onmessage = (msg) => {
@@ -150,30 +101,17 @@ function iniciar() {
         if (data.type === 'start') {
             side = data.side;
             document.getElementById('ui-overlay').style.display = 'none';
-            document.getElementById('info').style.display = 'block';
-            document.getElementById('info').innerHTML = `Nick: ${myNick} | Time: ${side}`;
             init3D();
         }
-        if (data.type === 'join' && side) {
-            // Quando o outro jogador entra, aplicamos a skin dele
-            aplicarSkin(data);
-        }
-        if (data.type === 'move') {
+        if (data.type === 'join' || data.type === 'move') {
             const target = data.side === 'A' ? playerA : playerB;
-            if(target) target.position.set(data.x, 0.5, data.z);
+            if (target) {
+                if (data.color) target.material.color.set(data.color);
+                if (data.nick) target.nickTag = data.nick;
+                if (data.x !== undefined) target.position.set(data.x, 0.5, data.z);
+            }
         }
     };
-}
-
-function aplicarSkin(data) {
-    const target = data.side === 'A' ? playerA : playerB;
-    if(!target) return;
-    if(data.face) {
-        const loader = new THREE.TextureLoader();
-        target.material.map = loader.load(data.face);
-        target.material.needsUpdate = true;
-    }
-    // Lógica do chapéu pode ser adicionada aqui criando um novo mesh
 }
 
 function init3D() {
@@ -183,26 +121,23 @@ function init3D() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
-
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
-    const wallGeo = new THREE.BoxGeometry(2, 2, 2);
     const wallMat = new THREE.MeshStandardMaterial({ color: 0x4444ff });
+    const wallGeo = new THREE.BoxGeometry(2, 2, 2);
     maze.forEach((row, z) => {
         row.forEach((val, x) => {
             if (val === 1) {
                 const wall = new THREE.Mesh(wallGeo, wallMat);
                 wall.position.set(x * 2 - mazeSize, 1, z * 2 - mazeSize);
-                scene.add(wall);
-                wallMeshes.push(wall);
+                scene.add(wall); wallMeshes.push(wall);
             }
         });
     });
 
     playerA = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
     playerB = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-    playerA.position.set(-mazeSize+2, 0.5, -mazeSize+2);
-    playerB.position.set(-mazeSize+2, 0.5, -mazeSize+2);
+    playerA.nickTag = "Carregando..."; playerB.nickTag = "Carregando...";
     scene.add(playerA, playerB);
 
     animate();
@@ -226,8 +161,18 @@ function animate() {
     camera.position.lerp(new THREE.Vector3(p.position.x, 10, p.position.z + 8), 0.1);
     camera.lookAt(p.position);
 
+    // Atualiza Nomes
+    [ {m: playerA, l: labelA, n: side==='A'?myNick:playerA.nickTag}, 
+      {m: playerB, l: labelB, n: side==='B'?myNick:playerB.nickTag} ].forEach(obj => {
+        const vec = obj.m.position.clone();
+        vec.y += 1.5; vec.project(camera);
+        obj.l.style.left = `${(vec.x * 0.5 + 0.5) * window.innerWidth}px`;
+        obj.l.style.top = `${(-(vec.y * 0.5 - 0.5)) * window.innerHeight}px`;
+        obj.l.innerHTML = obj.n;
+    });
+
     if (socket.readyState === 1) {
-        socket.send(JSON.stringify({ type: 'move', side, x: p.position.x, z: p.position.z }));
+        socket.send(JSON.stringify({ type: 'move', side, x: p.position.x, z: p.position.z, nick: myNick, color: playerColor }));
     }
     renderer.render(scene, camera);
 }
