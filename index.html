@@ -2,14 +2,15 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Maze FPS Duo</title>
+    <title>Maze FPS Duo - Mouse Control</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; }
         #ui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,10,0.9); z-index: 10; color: #0f0; text-align: center; }
         .box { border: 2px solid #0f0; padding: 40px; background: #000; box-shadow: 0 0 20px #0f0; }
         input { background: #000; border: 1px solid #0f0; color: #0f0; padding: 10px; margin: 10px; outline: none; }
         button { background: #0f0; color: #000; border: none; padding: 15px 30px; cursor: pointer; font-weight: bold; }
-        #hud { position: absolute; top: 10px; left: 10px; color: #0f0; font-size: 18px; pointer-events: none; }
+        #hud { position: absolute; top: 10px; left: 10px; color: #0f0; font-size: 18px; pointer-events: none; text-shadow: 1px 1px #000; }
+        #crosshair { position: absolute; top: 50%; left: 50%; color: #0f0; transform: translate(-50%, -50%); pointer-events: none; font-size: 20px; display: none; }
     </style>
 </head>
 <body>
@@ -20,18 +21,21 @@
         <input type="text" id="nick" placeholder="NICKNAME" maxlength="10"><br>
         <input type="text" id="sala" placeholder="SALA ID" value="777"><br>
         <button onclick="conectar()">INICIAR CONEXÃO</button>
+        <p style="font-size: 12px; margin-top: 15px;">Pressione <b>Q</b> para travar o mouse e girar a câmera.</p>
     </div>
 </div>
+
 <div id="hud">Aguardando...</div>
+<div id="crosshair">+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 let scene, camera, renderer, socket, side;
-let player, partner, partnerNick = "Amigo";
+let player, partner;
 let walls = [], door, doorBox, finishBox;
-let move = { fwd: false, bck: false, lft: false, rgt: false, rotL: false, rotR: false };
-let rot = 0;
+let move = { fwd: false, bck: false, lft: false, rgt: false };
+let yaw = 0; // Rotação horizontal (olhar pros lados)
 const mazeSize = 41;
 
 function conectar() {
@@ -47,18 +51,32 @@ function conectar() {
         if (data.type === 'start') {
             side = data.side;
             document.getElementById('ui').style.display = 'none';
-            document.getElementById('hud').innerText = "LADO: " + side + " | ESPERANDO DUPLA...";
+            document.getElementById('crosshair').style.display = 'block';
+            document.getElementById('hud').innerText = "LADO: " + side;
             init3D();
         }
         if (data.type === 'open_door') {
             document.getElementById('hud').innerText = "PORTA ABERTA! FUJAM!";
-            scene.remove(door); doorBox = null;
+            if(door) { scene.remove(door); doorBox = null; }
         }
         if (data.type === 'move' && data.side !== side) {
             partner.position.set(data.x, 0.5, data.z);
         }
     };
 }
+
+// Controle de Mouse (Pointer Lock) ao apertar Q
+document.addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'q') {
+        document.body.requestPointerLock();
+    }
+});
+
+document.addEventListener('mousemove', (e) => {
+    if (document.pointerLockElement === document.body) {
+        yaw -= e.movementX * 0.002; // Sensibilidade do mouse
+    }
+});
 
 function generateMaze() {
     let m = Array(mazeSize).fill().map(() => Array(mazeSize).fill(1));
@@ -73,16 +91,16 @@ function generateMaze() {
         }
     }
     walk(1, 1);
-    // SALA BINÁRIA FIXA
     for(let y=1; y<=3; y++) for(let x=1; x<=3; x++) m[y][x] = 0;
     for(let i=0; i<=4; i++) { m[0][i]=1; m[i][0]=1; m[4][i]=1; m[i][4]=1; }
-    m[4][2] = 2; // Porta Vermelha
-    m[mazeSize-2][mazeSize-2] = 3; // Saída Dourada
+    m[4][2] = 2; // Porta
+    m[mazeSize-2][mazeSize-2] = 3; // Saída
     return m;
 }
 
 function init3D() {
     scene = new THREE.Scene();
+    scene.fog = new THREE.Fog(0x000000, 1, 15); // Névoa para dar clima
     camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -90,70 +108,66 @@ function init3D() {
 
     const data = generateMaze();
     const wallGeo = new THREE.BoxGeometry(1, 2.5, 1);
+    const wallMat = new THREE.MeshStandardMaterial({color: 0x111133});
 
     data.forEach((row, y) => {
         row.forEach((val, x) => {
             if(val === 1) {
-                const w = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({color: 0x111133}));
+                const w = new THREE.Mesh(wallGeo, wallMat);
                 w.position.set(x, 1.25, y); scene.add(w);
                 walls.push(new THREE.Box3().setFromObject(w));
             } else if(val === 2) {
-                door = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({color: 0xff0000, emissive: 0x550000}));
+                door = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({color: 0xff0000, emissive: 0xff0000}));
                 door.position.set(x, 1.25, y); scene.add(door);
                 doorBox = new THREE.Box3().setFromObject(door);
             } else if(val === 3) {
-                const f = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({color: 0xffff00, emissive: 0x555500}));
+                const f = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({color: 0xffff00, emissive: 0xffff00}));
                 f.position.set(x, 1.25, y); scene.add(f);
                 finishBox = new THREE.Box3().setFromObject(f);
             }
         });
     });
 
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({color: 0x050505}));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({color: 0x111111}));
     floor.rotation.x = -Math.PI/2; scene.add(floor);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    let light = new THREE.PointLight(0x00ff00, 1, 10);
-    scene.add(light);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
 
-    // Player (Câmera) e Partner (Esfera)
+    let flashLight = new THREE.PointLight(0x00ff00, 1.5, 8);
+    scene.add(flashLight);
+
     player = new THREE.Group();
     player.position.set(side === 'A' ? 1.5 : 2.5, 1.2, side === 'A' ? 1.5 : 2.5);
     scene.add(player);
-    player.add(light); // Luz segue o jogador
+    player.add(flashLight);
 
-    partner = new THREE.Mesh(new THREE.SphereGeometry(0.4), new THREE.MeshStandardMaterial({color: 0x00ffff}));
+    partner = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshStandardMaterial({color: 0x00ffff, emissive: 0x00aaaa}));
     scene.add(partner);
 
     function animate() {
         requestAnimationFrame(animate);
         
-        // Rotação FPS
-        if(move.rotL) rot += 0.05;
-        if(move.rotR) rot -= 0.05;
-        player.rotation.y = rot;
-
-        const oldP = player.position.clone();
+        player.rotation.y = yaw;
+        const oldPos = player.position.clone();
         const dir = new THREE.Vector3();
-        if(move.fwd) dir.z -= 0.1;
-        if(move.bck) dir.z += 0.1;
-        if(move.lft) dir.x -= 0.1;
-        if(move.rgt) dir.x += 0.1;
+        
+        if(move.fwd) dir.z -= 0.08;
+        if(move.bck) dir.z += 0.08;
+        if(move.lft) dir.x -= 0.08;
+        if(move.rgt) dir.x += 0.08;
         
         dir.applyQuaternion(player.quaternion);
         player.position.add(dir);
 
-        // Colisão
-        const pBox = new THREE.Box3().setFromCenterAndSize(player.position, new THREE.Vector3(0.5, 1, 0.5));
+        const pBox = new THREE.Box3().setFromCenterAndSize(player.position, new THREE.Vector3(0.4, 1, 0.4));
         let hit = false;
         for(let w of walls) if(pBox.intersectsBox(w)) hit = true;
         if(doorBox && pBox.intersectsBox(doorBox)) hit = true;
-        if(hit) player.position.copy(oldP);
+        if(hit) player.position.copy(oldPos);
 
-        // Vitória
         if(finishBox && pBox.intersectsBox(finishBox)) location.reload();
 
         camera.position.copy(player.position);
-        camera.rotation.copy(player.rotation);
+        camera.rotation.y = yaw;
 
         if(socket.readyState === 1) {
             socket.send(JSON.stringify({type:'move', side, x: player.position.x, z: player.position.z}));
@@ -167,13 +181,11 @@ window.onkeydown = (e) => {
     const k = e.key.toLowerCase();
     if(k=='w') move.fwd=true; if(k=='s') move.bck=true;
     if(k=='a') move.lft=true; if(k=='d') move.rgt=true;
-    if(e.keyCode==37) move.rotL=true; if(e.keyCode==39) move.rotR=true;
 };
 window.onkeyup = (e) => {
     const k = e.key.toLowerCase();
     if(k=='w') move.fwd=false; if(k=='s') move.bck=false;
     if(k=='a') move.lft=false; if(k=='d') move.rgt=false;
-    if(e.keyCode==37) move.rotL=false; if(e.keyCode==39) move.rotR=false;
 };
 </script>
 </body>
