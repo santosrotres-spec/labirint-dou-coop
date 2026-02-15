@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Maze Duo - Color & Names</title>
+    <title>Maze Duo - Zona de Início</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; color: white; }
         #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a1a; display: flex; align-items: center; justify-content: center; z-index: 1000; }
@@ -13,14 +13,8 @@
         input[type="color"] { width: 100px; height: 45px; cursor: pointer; background: none; }
         button { padding: 12px; background: #4444ff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
         button.play { background: #22c55e; font-size: 18px; margin-top: 10px; }
-        
-        /* Tag de Nome Flutuante */
-        .label {
-            position: absolute; color: white; background: rgba(0,0,0,0.7);
-            padding: 4px 10px; border-radius: 4px; font-size: 14px;
-            pointer-events: none; transform: translate(-50%, -100%);
-            white-space: nowrap; font-weight: bold; border: 1px solid #444;
-        }
+        .label { position: absolute; color: white; background: rgba(0,0,0,0.7); padding: 4px 10px; border-radius: 4px; font-size: 14px; pointer-events: none; transform: translate(-50%, -100%); white-space: nowrap; font-weight: bold; }
+        #status-game { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 24px; pointer-events: none; display: none; }
     </style>
 </head>
 <body>
@@ -32,23 +26,25 @@
             <h1>MAZE DUO</h1>
             <input type="text" id="nick" placeholder="Seu Nickname">
             <input type="text" id="sala" placeholder="Código da Sala" value="123">
-            <span>Cor do Personagem:</span>
+            <span>Cor:</span>
             <input type="color" id="cor-player" value="#ff0000" oninput="updateColor(this.value)">
-            <button class="play" onclick="iniciar()">JOGAR AGORA</button>
+            <button class="play" onclick="iniciar()">JOGAR</button>
         </div>
     </div>
 </div>
+
+<div id="status-game">AGUARDANDO SEGUNDO JOGADOR...</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 let scene, camera, renderer, socket, side, myNick, playerColor = "#ff0000";
-let playerA, playerB, maze = [], wallMeshes = [];
-let labelA, labelB; 
+let playerA, playerB, maze = [], wallBoxes = [];
+let labelA, labelB, door;
 let move = { fwd: false, bck: false, lft: false, rgt: false };
 const mazeSize = 31;
 
-// PREVIEW DO MENU
+// PREVIEW
 let previewScene, previewCam, previewRenderer, previewModel;
 function initPreview() {
     previewScene = new THREE.Scene();
@@ -65,7 +61,6 @@ function initPreview() {
 function updateColor(val) { playerColor = val; previewModel.material.color.set(val); }
 initPreview();
 
-// JOGO
 function generateMaze(seed) {
     let m = Array(mazeSize).fill().map(() => Array(mazeSize).fill(1));
     function random(s) { let x = Math.sin(s) * 10000; return x - Math.floor(x); }
@@ -79,14 +74,17 @@ function generateMaze(seed) {
             }
         });
     }
-    walk(1, 1, seed); return m;
+    walk(1, 1, seed);
+    // Cria zona aberta no início (1,1 até 3,3)
+    for(let i=1; i<4; i++) for(let j=1; j<4; j++) m[i][j] = 0;
+    return m;
 }
 
 function iniciar() {
-    myNick = document.getElementById('nick').value || "Explorador";
+    myNick = document.getElementById('nick').value || "Player";
     const sala = document.getElementById('sala').value || "123";
     maze = generateMaze(parseInt(sala));
-
+    
     labelA = document.createElement('div'); labelA.className = 'label'; document.body.appendChild(labelA);
     labelB = document.createElement('div'); labelB.className = 'label'; document.body.appendChild(labelB);
 
@@ -101,7 +99,13 @@ function iniciar() {
         if (data.type === 'start') {
             side = data.side;
             document.getElementById('ui-overlay').style.display = 'none';
+            document.getElementById('status-game').style.display = 'block';
             init3D();
+        }
+        if (data.type === 'open_door') {
+            document.getElementById('status-game').style.display = 'none';
+            scene.remove(door); // Remove a porta
+            wallBoxes = wallBoxes.filter(b => b.isDoor !== true); // Remove colisão da porta
         }
         if (data.type === 'join' || data.type === 'move') {
             const target = data.side === 'A' ? playerA : playerB;
@@ -123,21 +127,35 @@ function init3D() {
     document.body.appendChild(renderer.domElement);
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x4444ff });
     const wallGeo = new THREE.BoxGeometry(2, 2, 2);
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x4444ff });
+
     maze.forEach((row, z) => {
         row.forEach((val, x) => {
             if (val === 1) {
                 const wall = new THREE.Mesh(wallGeo, wallMat);
                 wall.position.set(x * 2 - mazeSize, 1, z * 2 - mazeSize);
-                scene.add(wall); wallMeshes.push(wall);
+                scene.add(wall);
+                // Cria caixa de colisão
+                const box = new THREE.Box3().setFromObject(wall);
+                wallBoxes.push(box);
             }
         });
     });
 
-    playerA = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-    playerB = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-    playerA.nickTag = "Carregando..."; playerB.nickTag = "Carregando...";
+    // PORTA (Trancada na saída da zona inicial)
+    door = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+    door.position.set(4 * 2 - mazeSize, 1, 1 * 2 - mazeSize);
+    scene.add(door);
+    const doorBox = new THREE.Box3().setFromObject(door);
+    doorBox.isDoor = true;
+    wallBoxes.push(doorBox);
+
+    playerA = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    playerB = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    // Posição inicial na zona aberta
+    playerA.position.set(1 * 2 - mazeSize, 0.5, 1 * 2 - mazeSize);
+    playerB.position.set(2 * 2 - mazeSize, 0.5, 2 * 2 - mazeSize);
     scene.add(playerA, playerB);
 
     animate();
@@ -147,28 +165,33 @@ function animate() {
     requestAnimationFrame(animate);
     if (!side) return;
     const p = side === 'A' ? playerA : playerB;
-    const old = p.position.clone();
+    const oldPos = p.position.clone();
 
-    if (move.fwd) p.position.z -= 0.15;
-    if (move.bck) p.position.z += 0.15;
-    if (move.lft) p.position.x -= 0.15;
-    if (move.rgt) p.position.x += 0.15;
+    let speed = 0.12;
+    if (move.fwd) p.position.z -= speed;
+    if (move.bck) p.position.z += speed;
+    if (move.lft) p.position.x -= speed;
+    if (move.rgt) p.position.x += speed;
 
-    for (let w of wallMeshes) {
-        if (p.position.distanceTo(w.position) < 1.2) { p.position.copy(old); break; }
+    // COLISÃO MELHORADA
+    const playerBox = new THREE.Box3().setFromCenterAndSize(p.position, new THREE.Vector3(0.8, 0.8, 0.8));
+    for (let box of wallBoxes) {
+        if (playerBox.intersectsBox(box)) {
+            p.position.copy(oldPos);
+            break;
+        }
     }
 
     camera.position.lerp(new THREE.Vector3(p.position.x, 10, p.position.z + 8), 0.1);
     camera.lookAt(p.position);
 
-    // Atualiza Nomes
     [ {m: playerA, l: labelA, n: side==='A'?myNick:playerA.nickTag}, 
       {m: playerB, l: labelB, n: side==='B'?myNick:playerB.nickTag} ].forEach(obj => {
-        const vec = obj.m.position.clone();
-        vec.y += 1.5; vec.project(camera);
+        if(!obj.m) return;
+        const vec = obj.m.position.clone(); vec.y += 1.2; vec.project(camera);
         obj.l.style.left = `${(vec.x * 0.5 + 0.5) * window.innerWidth}px`;
         obj.l.style.top = `${(-(vec.y * 0.5 - 0.5)) * window.innerHeight}px`;
-        obj.l.innerHTML = obj.n;
+        obj.l.innerHTML = obj.n || "Carregando...";
     });
 
     if (socket.readyState === 1) {

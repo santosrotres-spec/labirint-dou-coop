@@ -4,8 +4,6 @@ const wss = new WebSocket.Server({ port });
 
 let rooms = {};
 
-console.log(`Servidor rodando na porta ${port}`);
-
 wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         const data = JSON.parse(message);
@@ -19,12 +17,16 @@ wss.on('connection', (ws) => {
             ws.roomId = roomId;
             rooms[roomId].push(ws);
 
-            // Manda o sinal de início para quem conectou
             ws.send(JSON.stringify({ type: 'start', side: side }));
-            console.log(`Jogador ${data.nick} (${side}) na sala ${roomId}`);
+
+            // Se tiver 2 jogadores, manda abrir a porta
+            if (rooms[roomId].length === 2) {
+                rooms[roomId].forEach(client => {
+                    client.send(JSON.stringify({ type: 'open_door' }));
+                });
+            }
         }
 
-        // Repassa movimento, cor e nick para os outros na mesma sala
         if (ws.roomId && rooms[ws.roomId]) {
             rooms[ws.roomId].forEach(client => {
                 if (client !== ws && client.readyState === WebSocket.OPEN) {
