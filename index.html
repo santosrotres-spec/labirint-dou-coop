@@ -2,18 +2,17 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Maze Duo - Full Fix</title>
+    <title>Maze Duo - Mapa Gigante</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #ui-overlay { position: absolute; inset: 0; background: #0a0a1a; display: flex; align-items: center; justify-content: center; z-index: 1000; color: white; }
-        .custom-box { background: #161625; padding: 30px; border-radius: 15px; border: 2px solid #4444ff; display: flex; gap: 20px; box-shadow: 0 0 20px rgba(68, 68, 255, 0.3); }
-        #char-preview { width: 200px; height: 250px; background: #000; border: 1px solid #444; border-radius: 8px; }
-        .controls { display: flex; flex-direction: column; gap: 12px; }
-        input { padding: 12px; border-radius: 5px; border: none; background: #2a2a3a; color: white; outline: none; }
-        button { padding: 15px; background: #22c55e; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; }
-        button:hover { background: #16a34a; }
-        .label { position: absolute; color: white; background: rgba(0,0,0,0.8); padding: 4px 10px; border-radius: 4px; font-size: 13px; transform: translate(-50%, -100%); pointer-events: none; border: 1px solid #444; font-weight: bold; }
-        #status-msg { position: absolute; top: 20px; width: 100%; text-align: center; color: #ff4444; font-size: 20px; font-weight: bold; display: none; text-shadow: 2px 2px #000; }
+        .custom-box { background: #161625; padding: 30px; border-radius: 15px; border: 2px solid #4444ff; display: flex; gap: 20px; }
+        #char-preview { width: 200px; height: 250px; background: #000; border: 1px solid #444; }
+        .controls { display: flex; flex-direction: column; gap: 10px; }
+        input { padding: 10px; border-radius: 5px; border: none; background: #2a2a3a; color: white; }
+        button { padding: 15px; background: #22c55e; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .label { position: absolute; color: white; background: rgba(0,0,0,0.8); padding: 4px 10px; border-radius: 4px; font-size: 13px; transform: translate(-50%, -100%); pointer-events: none; font-weight: bold; }
+        #status-msg { position: absolute; top: 20px; width: 100%; text-align: center; color: yellow; font-size: 20px; font-weight: bold; display: none; z-index: 10; }
     </style>
 </head>
 <body>
@@ -22,42 +21,25 @@
     <div class="custom-box">
         <div id="char-preview"></div>
         <div class="controls">
-            <h2 style="margin:0">MAZE DUO</h2>
+            <h2>MAZE DUO</h2>
             <input type="text" id="input-nick" placeholder="Seu Nickname">
             <input type="text" id="input-sala" placeholder="Código da Sala" value="123">
-            <label style="font-size: 12px; color: #aaa;">Sua Cor:</label>
-            <input type="color" id="input-cor" value="#00ffcc" style="width:100%; height:45px; padding:2px; cursor:pointer">
-            <button onclick="iniciar()">JOGAR AGORA</button>
+            <input type="color" id="input-cor" value="#ff00ff" style="width:100%; height:45px;">
+            <button onclick="iniciar()">JOGAR</button>
         </div>
     </div>
 </div>
 
-<div id="status-msg">AGUARDANDO AMIGO PARA ABRIR A PORTA...</div>
+<div id="status-msg">AGUARDANDO JOGADOR...</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 let scene, camera, renderer, socket, side, myNick, myColor;
-let playerA, playerB, wallBoxes = [], door, doorBox;
+let playerA, playerB, wallBoxes = [], door, doorBox, finishBlock, finishBox;
 let move = { fwd: false, bck: false, lft: false, rgt: false };
-const mazeSize = 25;
+const mazeSize = 51; // MAPA BEM GRANDE
 
-// PREVIEW DO MENU
-let pScene, pCam, pRen, pMesh;
-function initPreview() {
-    pScene = new THREE.Scene();
-    pCam = new THREE.PerspectiveCamera(75, 200/250, 0.1, 10); pCam.position.z = 2;
-    pRen = new THREE.WebGLRenderer({ antialias: true }); pRen.setSize(200, 250);
-    document.getElementById('char-preview').appendChild(pRen.domElement);
-    pMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 32, 32), new THREE.MeshStandardMaterial({ color: 0x00ffcc }));
-    pScene.add(pMesh, new THREE.AmbientLight(0xffffff, 1), new THREE.DirectionalLight(0xffffff, 0.5));
-    document.getElementById('input-cor').oninput = (e) => pMesh.material.color.set(e.target.value);
-    function anim() { requestAnimationFrame(anim); pMesh.rotation.y += 0.02; pRen.render(pScene, pCam); }
-    anim();
-}
-initPreview();
-
-// GERAÇÃO BINÁRIA DO LABIRINTO
 function generateMazeData(seed) {
     let m = Array(mazeSize).fill().map(() => Array(mazeSize).fill(1));
     function walk(x, y) {
@@ -71,32 +53,21 @@ function generateMazeData(seed) {
         }
     }
     walk(1, 1);
-
-    // FORÇAR SALA DE SPAWN (Binário: 0=Chão, 1=Parede, 2=Porta)
-    for(let y=1; y<=3; y++) for(let x=1; x<=3; x++) m[y][x] = 0; // Limpa o chão do spawn
-    
-    // Paredes da sala
-    for(let i=0; i<=4; i++) {
-        m[0][i] = 1; m[i][0] = 1; // Topo e Esquerda
-        m[4][i] = 1; m[i][4] = 1; // Fundo e Direita
-    }
-    
-    // A única saída (Porta)
-    m[4][2] = 2; // Posição binária da porta vermelha
-    m[5][2] = 0; // Caminho garantido após a porta
-    
+    // SALA DE SPAWN
+    for(let y=1; y<=3; y++) for(let x=1; x<=3; x++) m[y][x] = 0;
+    m[4][2] = 2; // PORTA
+    // FIM DO MAPA (Bloco de Vitória no canto oposto)
+    m[mazeSize-2][mazeSize-2] = 3; 
     return m;
 }
 
 function iniciar() {
-    myNick = document.getElementById('input-nick').value || "Explorador";
+    myNick = document.getElementById('input-nick').value || "Player";
     myColor = document.getElementById('input-cor').value;
     const sala = document.getElementById('input-sala').value;
     
     socket = new WebSocket('wss://labirint-dou-coop.onrender.com');
-    socket.onopen = () => {
-        socket.send(JSON.stringify({ type: 'join', token: sala, nick: myNick, color: myColor }));
-    };
+    socket.onopen = () => socket.send(JSON.stringify({ type: 'join', token: sala, nick: myNick, color: myColor }));
 
     socket.onmessage = (msg) => {
         const data = JSON.parse(msg.data);
@@ -108,16 +79,14 @@ function iniciar() {
         }
         if (data.type === 'open_door') {
             document.getElementById('status-msg').style.display = 'none';
-            scene.remove(door);
-            doorBox = null;
+            scene.remove(door); doorBox = null;
+        }
+        if (data.type === 'reset_game') {
+            location.reload(); // Volta para o menu ao vencer
         }
         if (data.type === 'move') {
             const p = data.side === 'A' ? playerA : playerB;
-            if(p) { 
-                p.position.set(data.x, 0.5, data.z); 
-                p.material.color.set(data.color);
-                p.nickName = data.nick;
-            }
+            if(p) { p.position.set(data.x, 0.5, data.z); p.material.color.set(data.color); p.nickName = data.nick; }
         }
     };
 }
@@ -131,28 +100,21 @@ function init3D(mazeData) {
     document.body.appendChild(renderer.domElement);
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
-    // CHÃO SÓLIDO
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(mazeSize*2, mazeSize*2), new THREE.MeshStandardMaterial({ color: 0x111122 }));
-    floor.rotation.x = -Math.PI/2;
-    floor.position.set(mazeSize/2, 0, mazeSize/2);
-    scene.add(floor);
-
     const wallGeo = new THREE.BoxGeometry(1, 2, 1);
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x333366 });
-
-    // CONSTRUÇÃO BASEADA NA MATRIZ BINÁRIA
     mazeData.forEach((row, y) => {
         row.forEach((val, x) => {
             if(val === 1) {
-                const wall = new THREE.Mesh(wallGeo, wallMat);
-                wall.position.set(x, 1, y);
-                scene.add(wall);
+                const wall = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0x333366 }));
+                wall.position.set(x, 1, y); scene.add(wall);
                 wallBoxes.push(new THREE.Box3().setFromObject(wall));
             } else if(val === 2) {
-                door = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.5 }));
-                door.position.set(x, 1, y);
-                scene.add(door);
+                door = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+                door.position.set(x, 1, y); scene.add(door);
                 doorBox = new THREE.Box3().setFromObject(door);
+            } else if(val === 3) {
+                finishBlock = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffd700 }));
+                finishBlock.position.set(x, 1, y); scene.add(finishBlock);
+                finishBox = new THREE.Box3().setFromObject(finishBlock);
             }
         });
     });
@@ -171,24 +133,27 @@ function init3D(mazeData) {
         if(!p) return;
         const oldPos = p.position.clone();
 
-        if (move.fwd) p.position.z -= 0.1;
-        if (move.bck) p.position.z += 0.1;
-        if (move.lft) p.position.x -= 0.1;
-        if (move.rgt) p.position.x += 0.1;
+        if (move.fwd) p.position.z -= 0.12; if (move.bck) p.position.z += 0.12;
+        if (move.lft) p.position.x -= 0.12; if (move.rgt) p.position.x += 0.12;
 
-        // COLISÃO PRECISA
         const pBox = new THREE.Box3().setFromCenterAndSize(p.position, new THREE.Vector3(0.6, 0.6, 0.6));
+        
+        // COLISÃO PAREDES/PORTA
         let colidiu = false;
         for(let box of wallBoxes) if(pBox.intersectsBox(box)) colidiu = true;
         if(doorBox && pBox.intersectsBox(doorBox)) colidiu = true;
         if(colidiu) p.position.copy(oldPos);
 
-        camera.position.lerp(new THREE.Vector3(p.position.x, 8, p.position.z + 5), 0.1);
+        // CHECAR VITÓRIA
+        if(finishBox && pBox.intersectsBox(finishBox)) {
+            socket.send(JSON.stringify({ type: 'reset' }));
+        }
+
+        camera.position.lerp(new THREE.Vector3(p.position.x, 12, p.position.z + 6), 0.1);
         camera.lookAt(p.position);
 
-        [ {m: playerA, l: lA, n: side==='A'?myNick:(playerA.nickName||"Amigo")}, 
-          {m: playerB, l: lB, n: side==='B'?myNick:(playerB.nickName||"Amigo")} ].forEach(o => {
-            if(!o.m) return;
+        [ {m: playerA, l: lA, n: side==='A'?myNick:(playerA.nickName||"Player A")}, 
+          {m: playerB, l: lB, n: side==='B'?myNick:(playerB.nickName||"Player B")} ].forEach(o => {
             const v = o.m.position.clone(); v.y += 0.8; v.project(camera);
             o.l.style.left = `${(v.x * 0.5 + 0.5) * window.innerWidth}px`;
             o.l.style.top = `${(-(v.y * 0.5 - 0.5)) * window.innerHeight}px`;
