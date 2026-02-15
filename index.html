@@ -2,17 +2,18 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Maze Duo - Fixed</title>
+    <title>Maze Duo - Full Fix</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         #ui-overlay { position: absolute; inset: 0; background: #0a0a1a; display: flex; align-items: center; justify-content: center; z-index: 1000; color: white; }
-        .custom-box { background: #161625; padding: 30px; border-radius: 15px; border: 2px solid #4444ff; display: flex; gap: 20px; }
-        #char-preview { width: 200px; height: 250px; background: #000; border: 1px solid #444; }
-        .controls { display: flex; flex-direction: column; gap: 10px; }
-        input { padding: 10px; border-radius: 5px; border: none; }
-        button { padding: 12px; background: #22c55e; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        .label { position: absolute; color: white; background: rgba(0,0,0,0.8); padding: 2px 8px; border-radius: 4px; font-size: 12px; transform: translate(-50%, -100%); pointer-events: none; }
-        #msg { position: absolute; top: 20px; width: 100%; text-align: center; color: yellow; font-weight: bold; display: none; }
+        .custom-box { background: #161625; padding: 30px; border-radius: 15px; border: 2px solid #4444ff; display: flex; gap: 20px; box-shadow: 0 0 20px rgba(68, 68, 255, 0.3); }
+        #char-preview { width: 200px; height: 250px; background: #000; border: 1px solid #444; border-radius: 8px; }
+        .controls { display: flex; flex-direction: column; gap: 12px; }
+        input { padding: 12px; border-radius: 5px; border: none; background: #2a2a3a; color: white; outline: none; }
+        button { padding: 15px; background: #22c55e; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 16px; transition: 0.3s; }
+        button:hover { background: #16a34a; }
+        .label { position: absolute; color: white; background: rgba(0,0,0,0.8); padding: 4px 10px; border-radius: 4px; font-size: 13px; transform: translate(-50%, -100%); pointer-events: none; border: 1px solid #444; font-weight: bold; }
+        #status-msg { position: absolute; top: 20px; width: 100%; text-align: center; color: #ff4444; font-size: 20px; font-weight: bold; display: none; text-shadow: 2px 2px #000; }
     </style>
 </head>
 <body>
@@ -21,16 +22,17 @@
     <div class="custom-box">
         <div id="char-preview"></div>
         <div class="controls">
-            <h2>MAZE DUO</h2>
-            <input type="text" id="input-nick" placeholder="Seu Nome">
+            <h2 style="margin:0">MAZE DUO</h2>
+            <input type="text" id="input-nick" placeholder="Seu Nickname">
             <input type="text" id="input-sala" placeholder="Código da Sala" value="123">
-            <input type="color" id="input-cor" value="#00ff00" style="width:100%; height:40px;">
-            <button onclick="iniciar()">ENTRAR NO JOGO</button>
+            <label style="font-size: 12px; color: #aaa;">Sua Cor:</label>
+            <input type="color" id="input-cor" value="#00ffcc" style="width:100%; height:45px; padding:2px; cursor:pointer">
+            <button onclick="iniciar()">JOGAR AGORA</button>
         </div>
     </div>
 </div>
 
-<div id="msg">AGUARDANDO OUTRO JOGADOR...</div>
+<div id="status-msg">AGUARDANDO AMIGO PARA ABRIR A PORTA...</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
@@ -38,23 +40,24 @@
 let scene, camera, renderer, socket, side, myNick, myColor;
 let playerA, playerB, wallBoxes = [], door, doorBox;
 let move = { fwd: false, bck: false, lft: false, rgt: false };
-const mazeSize = 21; // Labirinto menor para melhor performance
+const mazeSize = 25;
 
-// PREVIEW
+// PREVIEW DO MENU
 let pScene, pCam, pRen, pMesh;
 function initPreview() {
     pScene = new THREE.Scene();
     pCam = new THREE.PerspectiveCamera(75, 200/250, 0.1, 10); pCam.position.z = 2;
     pRen = new THREE.WebGLRenderer({ antialias: true }); pRen.setSize(200, 250);
     document.getElementById('char-preview').appendChild(pRen.domElement);
-    pMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 32, 32), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
-    pScene.add(pMesh, new THREE.AmbientLight(0xffffff, 1));
+    pMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 32, 32), new THREE.MeshStandardMaterial({ color: 0x00ffcc }));
+    pScene.add(pMesh, new THREE.AmbientLight(0xffffff, 1), new THREE.DirectionalLight(0xffffff, 0.5));
     document.getElementById('input-cor').oninput = (e) => pMesh.material.color.set(e.target.value);
     function anim() { requestAnimationFrame(anim); pMesh.rotation.y += 0.02; pRen.render(pScene, pCam); }
     anim();
 }
 initPreview();
 
+// GERAÇÃO BINÁRIA DO LABIRINTO
 function generateMazeData(seed) {
     let m = Array(mazeSize).fill().map(() => Array(mazeSize).fill(1));
     function walk(x, y) {
@@ -68,15 +71,25 @@ function generateMazeData(seed) {
         }
     }
     walk(1, 1);
-    // SALA DE SPAWN (Canto superior esquerdo)
-    for(let y=1; y<=3; y++) for(let x=1; x<=3; x++) m[y][x] = 0;
-    // Única saída do spawn
-    m[4][2] = 2; // Marcador para a porta
+
+    // FORÇAR SALA DE SPAWN (Binário: 0=Chão, 1=Parede, 2=Porta)
+    for(let y=1; y<=3; y++) for(let x=1; x<=3; x++) m[y][x] = 0; // Limpa o chão do spawn
+    
+    // Paredes da sala
+    for(let i=0; i<=4; i++) {
+        m[0][i] = 1; m[i][0] = 1; // Topo e Esquerda
+        m[4][i] = 1; m[i][4] = 1; // Fundo e Direita
+    }
+    
+    // A única saída (Porta)
+    m[4][2] = 2; // Posição binária da porta vermelha
+    m[5][2] = 0; // Caminho garantido após a porta
+    
     return m;
 }
 
 function iniciar() {
-    myNick = document.getElementById('input-nick').value || "Player";
+    myNick = document.getElementById('input-nick').value || "Explorador";
     myColor = document.getElementById('input-cor').value;
     const sala = document.getElementById('input-sala').value;
     
@@ -90,11 +103,11 @@ function iniciar() {
         if (data.type === 'start') {
             side = data.side;
             document.getElementById('ui-overlay').style.display = 'none';
-            document.getElementById('msg').style.display = 'block';
+            document.getElementById('status-msg').style.display = 'block';
             init3D(generateMazeData(parseInt(sala)));
         }
         if (data.type === 'open_door') {
-            document.getElementById('msg').style.display = 'none';
+            document.getElementById('status-msg').style.display = 'none';
             scene.remove(door);
             doorBox = null;
         }
@@ -116,17 +129,18 @@ function init3D(mazeData) {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
-    // CHÃO
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x111122 }));
+    // CHÃO SÓLIDO
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(mazeSize*2, mazeSize*2), new THREE.MeshStandardMaterial({ color: 0x111122 }));
     floor.rotation.x = -Math.PI/2;
+    floor.position.set(mazeSize/2, 0, mazeSize/2);
     scene.add(floor);
 
     const wallGeo = new THREE.BoxGeometry(1, 2, 1);
     const wallMat = new THREE.MeshStandardMaterial({ color: 0x333366 });
 
-    // CONSTRUIR LABIRINTO
+    // CONSTRUÇÃO BASEADA NA MATRIZ BINÁRIA
     mazeData.forEach((row, y) => {
         row.forEach((val, x) => {
             if(val === 1) {
@@ -135,7 +149,7 @@ function init3D(mazeData) {
                 scene.add(wall);
                 wallBoxes.push(new THREE.Box3().setFromObject(wall));
             } else if(val === 2) {
-                door = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+                door = new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0xff0000, emissiveIntensity: 0.5 }));
                 door.position.set(x, 1, y);
                 scene.add(door);
                 doorBox = new THREE.Box3().setFromObject(door);
@@ -145,16 +159,16 @@ function init3D(mazeData) {
 
     playerA = new THREE.Mesh(new THREE.SphereGeometry(0.4, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
     playerB = new THREE.Mesh(new THREE.SphereGeometry(0.4, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
-    playerA.position.set(1, 0.5, 1); playerB.position.set(3, 0.5, 3);
+    playerA.position.set(1.5, 0.5, 1.5); playerB.position.set(2.5, 0.5, 2.5);
     scene.add(playerA, playerB);
 
-    // LABELS
     const lA = document.createElement('div'); lA.className = 'label'; document.body.appendChild(lA);
     const lB = document.createElement('div'); lB.className = 'label'; document.body.appendChild(lB);
 
     function animate() {
         requestAnimationFrame(animate);
         const p = side === 'A' ? playerA : playerB;
+        if(!p) return;
         const oldPos = p.position.clone();
 
         if (move.fwd) p.position.z -= 0.1;
@@ -162,7 +176,7 @@ function init3D(mazeData) {
         if (move.lft) p.position.x -= 0.1;
         if (move.rgt) p.position.x += 0.1;
 
-        // COLISÃO
+        // COLISÃO PRECISA
         const pBox = new THREE.Box3().setFromCenterAndSize(p.position, new THREE.Vector3(0.6, 0.6, 0.6));
         let colidiu = false;
         for(let box of wallBoxes) if(pBox.intersectsBox(box)) colidiu = true;
@@ -172,9 +186,9 @@ function init3D(mazeData) {
         camera.position.lerp(new THREE.Vector3(p.position.x, 8, p.position.z + 5), 0.1);
         camera.lookAt(p.position);
 
-        // ATUALIZAR LABELS
         [ {m: playerA, l: lA, n: side==='A'?myNick:(playerA.nickName||"Amigo")}, 
           {m: playerB, l: lB, n: side==='B'?myNick:(playerB.nickName||"Amigo")} ].forEach(o => {
+            if(!o.m) return;
             const v = o.m.position.clone(); v.y += 0.8; v.project(camera);
             o.l.style.left = `${(v.x * 0.5 + 0.5) * window.innerWidth}px`;
             o.l.style.top = `${(-(v.y * 0.5 - 0.5)) * window.innerHeight}px`;
