@@ -2,55 +2,116 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Labirinto Duo 3D</title>
+    <title>Maze Duo Custom</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        
-        /* TELA INICIAL */
-        #ui-overlay { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: #0a0a1a; display: flex; align-items: center; justify-content: center; z-index: 1000; 
-        }
-        .login-box { background: #161625; padding: 40px; border-radius: 10px; text-align: center; border: 1px solid #4444ff; color: white; }
-        input { display: block; width: 250px; padding: 12px; margin: 10px auto; border-radius: 5px; border: none; }
-        button { width: 275px; padding: 12px; background: #4444ff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        
-        /* HUD */
-        #mapa { position: absolute; bottom: 20px; right: 20px; width: 150px; height: 150px; background: rgba(0,0,0,0.7); border: 2px solid #4444ff; z-index: 10; display: none; }
-        .p-mapa { position: absolute; width: 6px; height: 6px; border-radius: 50%; transform: translate(-50%, -50%); }
-        #info { position: absolute; top: 20px; left: 20px; color: white; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px; display: none; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; color: white; }
+        #ui-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #0a0a1a; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .custom-box { background: #161625; padding: 30px; border-radius: 15px; border: 2px solid #4444ff; display: flex; gap: 30px; align-items: center; }
+        #char-preview { width: 200px; height: 250px; background: #000; border-radius: 10px; border: 1px solid #444; }
+        .controls { display: flex; flex-direction: column; gap: 10px; text-align: center; }
+        canvas#rosto-canvas { background: white; border: 2px solid #4444ff; cursor: crosshair; image-rendering: pixelated; }
+        input { padding: 10px; border-radius: 5px; border: none; width: 200px; align-self: center; }
+        button { padding: 10px; background: #4444ff; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        button.play { background: #22c55e; font-size: 18px; margin-top: 10px; }
+        #info { position: absolute; top: 20px; left: 20px; background: rgba(0,0,0,0.6); padding: 10px; border-radius: 5px; display: none; }
     </style>
 </head>
 <body>
 
 <div id="ui-overlay">
-    <div class="login-box">
-        <h1>MAZE DUO</h1>
-        <input type="text" id="sala" placeholder="Código da Sala" value="Token da sala">
-        <input type="text" id="nick" placeholder="Seu nick" value="Seu nome">
-        <button onclick="iniciar()">JOGAR AGORA</button>
+    <div class="custom-box">
+        <div id="char-preview"></div>
+        <div class="controls">
+            <h1>MAZE DUO</h1>
+            <input type="text" id="nick" placeholder="Seu Nickname">
+            <input type="text" id="sala" placeholder="Código da Sala" value="123">
+            
+            <span>Desenhe seu Rosto (Lápis):</span>
+            <canvas id="rosto-canvas" width="64" height="64"></canvas>
+            
+            <button onclick="toggleHat()">Alternar Chapéu</button>
+            <button class="play" onclick="iniciar()">JOGAR AGORA</button>
+        </div>
     </div>
 </div>
 
 <div id="info">Conectando...</div>
-<div id="mapa"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 let scene, camera, renderer, socket, side, myNick;
-let playerA, playerB, maze = [];
-let wallMeshes = [];
+let playerA, playerB, maze = [], wallMeshes = [];
 let move = { fwd: false, bck: false, lft: false, rgt: false };
-const mazeSize = 41; // 10x maior que o original
+const mazeSize = 31;
 
-// GERADOR DE LABIRINTO (Igual para os dois via Seed)
+// --- SISTEMA DE CUSTOMIZAÇÃO ---
+let previewScene, previewCam, previewRenderer, previewModel, previewHat;
+let hasHat = false;
+const canvas = document.getElementById('rosto-canvas');
+const ctx = canvas.getContext('2d');
+let painting = false;
+
+// Desenho no Canvas
+canvas.onmousedown = () => painting = true;
+window.onmouseup = () => { painting = false; updateTextures(); };
+canvas.onmousemove = (e) => {
+    if (!painting) return;
+    const rect = canvas.getBoundingClientRect();
+    ctx.fillStyle = "black";
+    ctx.fillRect(e.clientX - rect.left - 2, e.clientY - rect.top - 2, 4, 4);
+};
+
+function updateTextures() {
+    const tex = new THREE.CanvasTexture(canvas);
+    previewModel.material.map = tex;
+    previewModel.material.needsUpdate = true;
+}
+
+function toggleHat() {
+    hasHat = !hasHat;
+    previewHat.visible = hasHat;
+}
+
+function initPreview() {
+    previewScene = new THREE.Scene();
+    previewCam = new THREE.PerspectiveCamera(75, 200/250, 0.1, 10);
+    previewCam.position.set(0, 0.5, 2);
+    
+    previewRenderer = new THREE.WebGLRenderer({ antialias: true });
+    previewRenderer.setSize(200, 250);
+    document.getElementById('char-preview').appendChild(previewRenderer.domElement);
+
+    const group = new THREE.Group();
+    // Cabeça
+    previewModel = new THREE.Mesh(
+        new THREE.SphereGeometry(0.8, 32, 32),
+        new THREE.MeshStandardMaterial({ color: 0xffffff })
+    );
+    // Chapéu
+    previewHat = new THREE.Mesh(
+        new THREE.ConeGeometry(0.6, 1, 32),
+        new THREE.MeshStandardMaterial({ color: 0xffd700 })
+    );
+    previewHat.position.y = 0.8;
+    previewHat.visible = false;
+
+    group.add(previewModel, previewHat);
+    previewScene.add(group, new THREE.AmbientLight(0xffffff, 1));
+    
+    function anim() { 
+        requestAnimationFrame(anim); 
+        group.rotation.y += 0.01; 
+        previewRenderer.render(previewScene, previewCam); 
+    }
+    anim();
+}
+initPreview();
+
+// --- LÓGICA DO JOGO ---
 function generateMaze(seed) {
     let m = Array(mazeSize).fill().map(() => Array(mazeSize).fill(1));
-    function random(s) {
-        let x = Math.sin(s) * 10000;
-        return x - Math.floor(x);
-    }
+    function random(s) { let x = Math.sin(s) * 10000; return x - Math.floor(x); }
     function walk(x, y, s) {
         m[y][x] = 0;
         let dirs = [[0,2],[0,-2],[2,0],[-2,0]].sort(() => random(s++) - 0.5);
@@ -63,97 +124,96 @@ function generateMaze(seed) {
         });
     }
     walk(1, 1, seed);
-    m[mazeSize-2][mazeSize-2] = 2; // Saída
     return m;
-}
-
-function init3D() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050510);
-    scene.fog = null
-
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    const light = new THREE.PointLight(0xffffff, 1, 50);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5), light);
-
-    const wallGeo = new THREE.BoxGeometry(2, 2, 2);
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x333366 });
-
-    maze.forEach((row, z) => {
-        row.forEach((val, x) => {
-            let pos = { x: x * 2 - mazeSize, z: z * 2 - mazeSize };
-            if (val === 1) {
-                const wall = new THREE.Mesh(wallGeo, wallMat);
-                wall.position.set(pos.x, 1, pos.z);
-                scene.add(wall);
-                wallMeshes.push(wall);
-            } else if (val === 2) {
-                const goal = new THREE.Mesh(wallGeo, new THREE.MeshBasicMaterial({ color: 0x00ff00 }));
-                goal.position.set(pos.x, 0.5, pos.z);
-                scene.add(goal);
-            }
-        });
-    });
-
-    playerA = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
-    playerB = new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
-    playerA.position.set(-mazeSize + 2, 0.5, -mazeSize + 2);
-    playerB.position.set(-mazeSize + 2, 0.5, -mazeSize + 2);
-    scene.add(playerA, playerB);
-
-    animate();
 }
 
 function iniciar() {
     myNick = document.getElementById('nick').value || "Explorador";
-    const sala = document.getElementById('sala').value;
-    
-    maze = generateMaze(parseInt(sala) || 123);
+    const sala = document.getElementById('sala').value || "123";
+    maze = generateMaze(parseInt(sala));
 
-    // TROQUE ESTA URL PELO TEU LINK DO RENDER
     socket = new WebSocket('wss://labirint-dou-coop.onrender.com');
 
     socket.onopen = () => {
-        socket.send(JSON.stringify({ type: 'join', token: sala, nick: myNick }));
-        document.getElementById('ui-overlay').style.display = 'none';
-        document.getElementById('mapa').style.display = 'block';
-        document.getElementById('info').style.display = 'block';
-        init3D();
+        const faceData = canvas.toDataURL(); // Converte desenho em imagem
+        socket.send(JSON.stringify({ 
+            type: 'join', 
+            token: sala, 
+            nick: myNick, 
+            face: faceData, 
+            hat: hasHat 
+        }));
     };
 
     socket.onmessage = (msg) => {
         const data = JSON.parse(msg.data);
         if (data.type === 'start') {
             side = data.side;
+            document.getElementById('ui-overlay').style.display = 'none';
+            document.getElementById('info').style.display = 'block';
             document.getElementById('info').innerHTML = `Nick: ${myNick} | Time: ${side}`;
+            init3D();
+        }
+        if (data.type === 'join' && side) {
+            // Quando o outro jogador entra, aplicamos a skin dele
+            aplicarSkin(data);
         }
         if (data.type === 'move') {
             const target = data.side === 'A' ? playerA : playerB;
-            target.position.set(data.x, 0.5, data.z);
+            if(target) target.position.set(data.x, 0.5, data.z);
         }
     };
 }
 
-window.onkeydown = (e) => handleKey(e.key, true);
-window.onkeyup = (e) => handleKey(e.key, false);
-function handleKey(k, state) {
-    if(k==='w'||k==='W') move.fwd = state;
-    if(k==='s'||k==='S') move.bck = state;
-    if(k==='a'||k==='A') move.lft = state;
-    if(k==='d'||k==='D') move.rgt = state;
+function aplicarSkin(data) {
+    const target = data.side === 'A' ? playerA : playerB;
+    if(!target) return;
+    if(data.face) {
+        const loader = new THREE.TextureLoader();
+        target.material.map = loader.load(data.face);
+        target.material.needsUpdate = true;
+    }
+    // Lógica do chapéu pode ser adicionada aqui criando um novo mesh
+}
+
+function init3D() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a1a);
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+
+    const wallGeo = new THREE.BoxGeometry(2, 2, 2);
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x4444ff });
+    maze.forEach((row, z) => {
+        row.forEach((val, x) => {
+            if (val === 1) {
+                const wall = new THREE.Mesh(wallGeo, wallMat);
+                wall.position.set(x * 2 - mazeSize, 1, z * 2 - mazeSize);
+                scene.add(wall);
+                wallMeshes.push(wall);
+            }
+        });
+    });
+
+    playerA = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    playerB = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+    playerA.position.set(-mazeSize+2, 0.5, -mazeSize+2);
+    playerB.position.set(-mazeSize+2, 0.5, -mazeSize+2);
+    scene.add(playerA, playerB);
+
+    animate();
 }
 
 function animate() {
     requestAnimationFrame(animate);
     if (!side) return;
-
     const p = side === 'A' ? playerA : playerB;
     const old = p.position.clone();
-    
+
     if (move.fwd) p.position.z -= 0.15;
     if (move.bck) p.position.z += 0.15;
     if (move.lft) p.position.x -= 0.15;
@@ -163,21 +223,17 @@ function animate() {
         if (p.position.distanceTo(w.position) < 1.2) { p.position.copy(old); break; }
     }
 
-    camera.position.lerp(new THREE.Vector3(p.position.x, 12, p.position.z + 8), 0.1);
+    camera.position.lerp(new THREE.Vector3(p.position.x, 10, p.position.z + 8), 0.1);
     camera.lookAt(p.position);
 
-    if (socket.readyState === WebSocket.OPEN) {
+    if (socket.readyState === 1) {
         socket.send(JSON.stringify({ type: 'move', side, x: p.position.x, z: p.position.z }));
     }
-
-    const scale = 100 / (mazeSize * 2);
-    document.getElementById('mapa').innerHTML = `
-        <div class="p-mapa" style="background:red; left:${50 + playerA.position.x*scale}%; top:${50 + playerA.position.z*scale}%"></div>
-        <div class="p-mapa" style="background:cyan; left:${50 + playerB.position.x*scale}%; top:${50 + playerB.position.z*scale}%"></div>
-    `;
-
     renderer.render(scene, camera);
 }
+
+window.onkeydown = (e) => { const k=e.key.toLowerCase(); if(k=='w')move.fwd=true; if(k=='s')move.bck=true; if(k=='a')move.lft=true; if(k=='d')move.rgt=true; };
+window.onkeyup = (e) => { const k=e.key.toLowerCase(); if(k=='w')move.fwd=false; if(k=='s')move.bck=false; if(k=='a')move.lft=false; if(k=='d')move.rgt=false; };
 </script>
 </body>
 </html>
