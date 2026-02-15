@@ -115,7 +115,7 @@ function iniciar() {
     maze = generateMaze(parseInt(sala) || 123);
 
     // TROQUE ESTA URL PELO TEU LINK DO RENDER
-    socket = new WebSocket('wss://TEU-LINK-AQUI.onrender.com');
+    socket = new WebSocket('wss://labirint-dou-coop.onrender.com');
 
     socket.onopen = () => {
         socket.send(JSON.stringify({ type: 'join', token: sala, nick: myNick }));
