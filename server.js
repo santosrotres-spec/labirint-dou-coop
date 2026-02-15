@@ -4,37 +4,44 @@ const wss = new WebSocket.Server({ port });
 
 let rooms = {};
 
-setInterval(() => {
-    wss.clients.forEach(ws => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'heartbeat' }));
-    });
-}, 15000);
-
 wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         const data = JSON.parse(message);
+        const roomId = data.token || ws.roomId;
+
         if (data.type === 'join') {
-            const roomId = data.token;
-            if (!rooms[roomId]) rooms[roomId] = [];
-            ws.side = rooms[roomId].length === 0 ? 'A' : 'B';
+            if (!rooms[roomId]) rooms[roomId] = { players: [], level: 1, ready: [] };
             ws.roomId = roomId;
-            rooms[roomId].push(ws);
-            ws.send(JSON.stringify({ type: 'start', side: ws.side }));
-            if (rooms[roomId].length === 2) {
-                rooms[roomId].forEach(c => c.send(JSON.stringify({ type: 'open_door' })));
+            ws.side = rooms[roomId].players.length === 0 ? 'A' : 'B';
+            rooms[roomId].players.push(ws);
+            
+            ws.send(JSON.stringify({ type: 'start', side: ws.side, level: rooms[roomId].level }));
+        }
+
+        if (data.type === 'reached_exit') {
+            const room = rooms[roomId];
+            if (!room.ready.includes(ws.side)) room.ready.push(ws.side);
+            
+            if (room.ready.length === 2) {
+                room.level++;
+                room.ready = [];
+                room.players.forEach(p => p.send(JSON.stringify({ type: 'next_level', level: room.level })));
+            } else {
+                ws.send(JSON.stringify({ type: 'waiting_partner' }));
             }
         }
-        if (ws.roomId && rooms[ws.roomId]) {
-            rooms[ws.roomId].forEach(client => {
-                if (client !== ws && client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify(data));
-                }
+
+        if (data.type === 'move' && rooms[roomId]) {
+            rooms[roomId].players.forEach(p => {
+                if (p !== ws) p.send(JSON.stringify(data));
             });
         }
     });
+
     ws.on('close', () => {
         if (ws.roomId && rooms[ws.roomId]) {
-            rooms[ws.roomId] = rooms[ws.roomId].filter(c => c !== ws);
+            rooms[ws.roomId].players = rooms[ws.roomId].players.filter(p => p !== ws);
+            if (rooms[ws.roomId].players.length === 0) delete rooms[ws.roomId];
         }
     });
 });
