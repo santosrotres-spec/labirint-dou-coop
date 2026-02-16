@@ -1,160 +1,172 @@
-
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Maze Duo FPS - FIXED</title>
+    <title>Maze Duo FPS - Level System</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #ui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; z-index: 100; color: #0f0; }
         .menu { border: 2px solid #0f0; padding: 30px; text-align: center; background: #050505; }
-        button { background: #0f0; color: #000; border: none; padding: 15px 30px; cursor: pointer; font-weight: bold; font-size: 20px; }
-        #hud { position: absolute; top: 10px; left: 10px; color: #0f0; z-index: 10; font-size: 18px; pointer-events: none; }
+        input { background: #111; border: 1px solid #0f0; color: #0f0; padding: 10px; margin: 10px; text-align: center; }
+        button { background: #0f0; color: #000; border: none; padding: 15px 30px; cursor: pointer; font-weight: bold; }
+        #hud { position: absolute; top: 10px; left: 10px; color: #0f0; z-index: 10; font-size: 18px; text-shadow: 2px 2px #000; }
     </style>
 </head>
 <body>
 
 <div id="ui">
     <div class="menu">
-        <h1>MAZE DUO 3D</h1>
-        <button id="btnJogar">CLIQUE PARA INICIAR</button>
-        <p>W, A, S, D para andar<br>Q para travar o mouse</p>
+        <h1>MAZE DUO: 10 FASES</h1>
+        <input type="text" id="inputSala" value="777" placeholder="TOKEN DA SALA"><br>
+        <button id="btnJogar">ENTRAR NA SALA</button>
+        <p>W,A,S,D: Andar | Q: Mouse | ESC: Sair Mouse</p>
     </div>
 </div>
 
-<div id="hud">Aperte o botão verde</div>
+<div id="hud">Aguardando...</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
-let scene, camera, renderer, socket, side = 'A', player, partner;
-let walls = [], exitBox, gameIniciado = false;
+let scene, camera, renderer, socket, side, player, partner;
+let walls = [], exitBox, gameAtivo = false;
 let move = { fwd: false, bck: false, lft: false, rgt: false };
 let yaw = 0, currentLevel = 1;
 
-// Inicialização forçada do Three.js
-function init3D() {
+function initThree() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000010);
-    scene.fog = new THREE.Fog(0x000000, 1, 20);
-    
+    scene.fog = new THREE.Fog(0x000000, 1, 15);
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    const light = new THREE.PointLight(0x00ff00, 2, 12);
+    // Luz do Jogador
+    const light = new THREE.PointLight(0x00ff00, 2, 10);
     player = new THREE.Group();
-    player.position.set(1.5, 1.2, 1.5);
     player.add(light);
     scene.add(player);
 
+    // Parceiro
     partner = new THREE.Mesh(new THREE.SphereGeometry(0.3), new THREE.MeshBasicMaterial({color: 0x00ffff}));
     scene.add(partner);
-    
-    createMaze(15);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.1));
     animate();
 }
 
-function createMaze(size) {
-    // Limpa paredes antigas
+function generateMaze(level) {
+    // Limpeza
     walls.forEach(w => scene.remove(w));
     walls = [];
+    if(exitBox) { scene.remove(exitBox.mesh); exitBox = null; }
+
+    const size = 11 + (level * 4); // Aumenta o tamanho
+    let grid = Array(size).fill().map(() => Array(size).fill(1));
+    
+    function walk(x, y) {
+        grid[y][x] = 0;
+        let d = [[0,2],[0,-2],[2,0],[-2,0]].sort(() => Math.random()-0.5);
+        for(let [dx, dy] of d) {
+            let nx=x+dx, ny=y+dy;
+            if(nx>0 && nx<size-1 && ny>0 && ny<size-1 && grid[ny][nx]===1) {
+                grid[y+dy/2][x+dx/2]=0; walk(nx, ny);
+            }
+        }
+    }
+    walk(1, 1);
 
     const geo = new THREE.BoxGeometry(1, 3, 1);
     const mat = new THREE.MeshStandardMaterial({ color: 0x222244 });
 
-    for(let z=0; z<size; z++) {
-        for(let x=0; x<size; x++) {
-            if(Math.random() > 0.7 && !(x<3 && z<3)) { // Gera paredes aleatórias exceto no spawn
+    grid.forEach((row, z) => {
+        row.forEach((val, x) => {
+            if(val === 1) {
                 const w = new THREE.Mesh(geo, mat);
                 w.position.set(x, 1.5, z);
                 scene.add(w);
                 walls.push(new THREE.Box3().setFromObject(w));
+            } else if(x === size-2 && z === size-2) {
+                const e = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: 0x00ff00, emissive: 0x00ff00}));
+                e.position.set(x, 1.5, z);
+                scene.add(e);
+                exitBox = { box: new THREE.Box3().setFromObject(e), mesh: e };
             }
-        }
-    }
-    // Chão
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100,100), new THREE.MeshStandardMaterial({color:0x111111}));
-    floor.rotation.x = -Math.PI/2;
-    scene.add(floor);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+        });
+    });
+    player.position.set(1.5, 1.2, 1.5);
 }
 
 function animate() {
     requestAnimationFrame(animate);
-    if(!gameIniciado) return;
+    if(!gameAtivo) return;
 
     player.rotation.y = yaw;
     let oldPos = player.position.clone();
-    
     let vel = new THREE.Vector3();
-    if (move.fwd) vel.z -= 0.12;
-    if (move.bck) vel.z += 0.12;
-    if (move.lft) vel.x -= 0.12;
-    if (move.rgt) vel.x += 0.12;
+    if (move.fwd) vel.z -= 0.1; if (move.bck) vel.z += 0.1;
+    if (move.lft) vel.x -= 0.1; if (move.rgt) vel.x += 0.1;
 
     vel.applyQuaternion(player.quaternion);
     player.position.add(vel);
 
-    // Colisão
-    let pBox = new THREE.Box3().setFromCenterAndSize(player.position, new THREE.Vector3(0.5, 1, 0.5));
-    for (let wall of walls) {
-        if (pBox.intersectsBox(wall)) {
-            player.position.copy(oldPos);
-            break;
-        }
+    let pBox = new THREE.Box3().setFromCenterAndSize(player.position, new THREE.Vector3(0.4, 1, 0.4));
+    let hit = false;
+    for (let wall of walls) { if (pBox.intersectsBox(wall)) { hit = true; break; } }
+    if(hit) player.position.copy(oldPos);
+
+    if (exitBox && pBox.intersectsBox(exitBox.box)) {
+        socket.send(JSON.stringify({ type: 'reached_exit' }));
+        document.getElementById('hud').innerText = "ESPERANDO PARCEIRO...";
     }
 
     camera.position.copy(player.position);
     camera.rotation.y = yaw;
-
     if (socket && socket.readyState === 1) {
         socket.send(JSON.stringify({ type: 'move', side, x: player.position.x, z: player.position.z }));
     }
-
     renderer.render(scene, camera);
 }
 
-// Eventos de teclado
-window.addEventListener('keydown', (e) => {
-    let k = e.key.toLowerCase();
-    if(k === 'w') move.fwd = true;
-    if(k === 's') move.bck = true;
-    if(k === 'a') move.lft = true;
-    if(k === 'd') move.rgt = true;
-    if(k === 'q') document.body.requestPointerLock();
-});
-
-window.addEventListener('keyup', (e) => {
-    let k = e.key.toLowerCase();
-    if(k === 'w') move.fwd = false;
-    if(k === 's') move.bck = false;
-    if(k === 'a') move.lft = false;
-    if(k === 'd') move.rgt = false;
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (document.pointerLockElement === document.body) {
-        yaw -= e.movementX * 0.002;
-    }
-});
-
 document.getElementById('btnJogar').onclick = () => {
-    gameIniciado = true;
-    document.getElementById('ui').style.display = 'none';
-    document.getElementById('hud').innerText = "Jogando...";
-    
-    // Inicia Socket em segundo plano
+    const sala = document.getElementById('inputSala').value;
     socket = new WebSocket('wss://labirint-dou-coop.onrender.com');
+    
     socket.onmessage = (msg) => {
-        let data = JSON.parse(msg.data);
+        const data = JSON.parse(msg.data);
+        if(data.type === 'start') {
+            side = data.side; currentLevel = data.level;
+            document.getElementById('ui').style.display = 'none';
+            document.getElementById('hud').innerText = "NÍVEL: " + currentLevel;
+            generateMaze(currentLevel);
+            gameAtivo = true;
+        }
+        if(data.type === 'next_level') {
+            currentLevel = data.level;
+            document.getElementById('hud').innerText = "NÍVEL: " + currentLevel;
+            generateMaze(currentLevel);
+        }
         if(data.type === 'move' && partner) partner.position.set(data.x, 0.5, data.z);
     };
+    socket.onopen = () => socket.send(JSON.stringify({ type: 'join', token: sala }));
 };
 
-// Inicia o motor gráfico ao carregar a página
-window.onload = init3D;
+window.addEventListener('keydown', e => {
+    let k = e.key.toLowerCase();
+    if(k=='w') move.fwd=true; if(k=='s') move.bck=true;
+    if(k=='a') move.lft=true; if(k=='d') move.rgt=true;
+    if(k=='q') document.body.requestPointerLock();
+});
+window.addEventListener('keyup', e => {
+    let k = e.key.toLowerCase();
+    if(k=='w') move.fwd=false; if(k=='s') move.bck=false;
+    if(k=='a') move.lft=false; if(k=='d') move.rgt=false;
+});
+document.addEventListener('mousemove', e => {
+    if (document.pointerLockElement === document.body) yaw -= e.movementX * 0.002;
+});
+
+window.onload = initThree;
 </script>
 </body>
 </html>
