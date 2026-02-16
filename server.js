@@ -1,7 +1,6 @@
 const WebSocket = require('ws');
 const port = process.env.PORT || 10000;
 const wss = new WebSocket.Server({ port });
-
 let rooms = {};
 
 wss.on('connection', (ws) => {
@@ -14,34 +13,25 @@ wss.on('connection', (ws) => {
             ws.roomId = roomId;
             ws.side = rooms[roomId].players.length === 0 ? 'A' : 'B';
             rooms[roomId].players.push(ws);
-            
             ws.send(JSON.stringify({ type: 'start', side: ws.side, level: rooms[roomId].level }));
         }
 
         if (data.type === 'reached_exit') {
             const room = rooms[roomId];
             if (!room.ready.includes(ws.side)) room.ready.push(ws.side);
-            
             if (room.ready.length === 2) {
-                room.level++;
-                room.ready = [];
+                room.level++; room.ready = [];
                 room.players.forEach(p => p.send(JSON.stringify({ type: 'next_level', level: room.level })));
-            } else {
-                ws.send(JSON.stringify({ type: 'waiting_partner' }));
             }
         }
 
         if (data.type === 'move' && rooms[roomId]) {
-            rooms[roomId].players.forEach(p => {
-                if (p !== ws) p.send(JSON.stringify(data));
-            });
+            rooms[roomId].players.forEach(p => { if (p !== ws) p.send(JSON.stringify(data)); });
         }
     });
-
     ws.on('close', () => {
         if (ws.roomId && rooms[ws.roomId]) {
             rooms[ws.roomId].players = rooms[ws.roomId].players.filter(p => p !== ws);
-            if (rooms[ws.roomId].players.length === 0) delete rooms[ws.roomId];
         }
     });
 });
