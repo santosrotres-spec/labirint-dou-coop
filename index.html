@@ -2,7 +2,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Maze Duo FPS - Fixed Spawn</title>
+    <title>Maze Duo FPS - Spawn Próximo</title>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #ui { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; z-index: 100; color: #0f0; }
@@ -16,7 +16,7 @@
 
 <div id="ui">
     <div class="menu">
-        <h1>MAZE DUO: 10 FASES</h1>
+        <h1>MAZE DUO: FPS</h1>
         <input type="text" id="inputSala" value="777" placeholder="TOKEN DA SALA"><br>
         <button id="btnJogar">ENTRAR NA SALA</button>
         <p>W,A,S,D: Andar | Q: Mouse | ESC: Sair Mouse</p>
@@ -92,11 +92,11 @@ function generateMaze(level) {
         });
     });
 
-    // CORREÇÃO DO SPAWN: Jogadores nascem em pontos diferentes
+    // SPAWN COLADO (Diferença de 0.1 para evitar bug de colisão)
     if(side === 'A') {
-        player.position.set(1.2, 1.2, 1.2);
+        player.position.set(1.45, 1.2, 1.5);
     } else {
-        player.position.set(1.8, 1.2, 1.8);
+        player.position.set(1.55, 1.2, 1.5);
     }
 }
 
@@ -120,7 +120,7 @@ function animate() {
 
     if (exitBox && pBox.intersectsBox(exitBox.box)) {
         socket.send(JSON.stringify({ type: 'reached_exit' }));
-        document.getElementById('hud').innerText = "NÍVEL " + currentLevel + " | ESPERANDO PARCEIRO NA SAÍDA...";
+        document.getElementById('hud').innerText = "ESPERANDO PARCEIRO NA SAÍDA...";
     }
 
     camera.position.copy(player.position);
